@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8">
+
+    <title>Управление зависимостями и сложностью</title>
+
+    <meta name="description" content="A framework for easily creating beautiful presentations using HTML">
+    <meta name="author" content="Hakim El Hattab">
+
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <link rel="stylesheet" href="css/reveal.min.css">
+    <link rel="stylesheet" href="css/theme/default.css" id="theme">
+
+    <!-- For syntax highlighting -->
+    <link rel="stylesheet" href="lib/css/zenburn.css">
+
+    <!-- If the query includes 'print-pdf', use the PDF print sheet -->
+    <script>
+      document.write( '<link rel="stylesheet" href="css/print/' + ( window.location.search.match( /print-pdf/gi ) ? 'pdf' : 'paper' ) + '.css" type="text/css" media="print">' );
+    </script>
+
+    <!--[if lt IE 9]>
+    <script src="lib/js/html5shiv.js"></script>
+    <![endif]-->
+  </head>
+
+  <body>
+
+    <div class="reveal">
+
+      <!-- Any section element inside of this container is displayed as a slide -->
+      <div class="slides">
+        <section>
+          <h1>OOP, FP &amp; Dependency management in Ruby/Rails</h1>
+        </section>
+
+        <section>
+          <h1>Управление зависимостями и сложностью</h1>
+          <h2>Почему мне должно быть не все равно?</h2>
+          <h2>Ка OOP/FP могут помочь?</h2>
+          <h2>Ну и чуток о Ruby/Rails :)</h2>
+        </section>
+
+        <section>
+          <h2>Павел Форкерт</h2>
+          <p>Пишу на руби уже больше 4х лет</p>
+          <p>Когда-то коммитил в Travis CI</p>
+          <p>много чего еще</p>
+          <ul>
+            <li><a href="http://twitter.com/fxposter">@fxposter</a></li>
+            <li><a href="https://github.com/fxposter">github.com/fxposter</a></li>
+            <li><a href="http://blog.fxposter.org">blog.fxposter.org</a></li>
+            <li><a href="mailto:fxposter@gmail.com">fxposter@gmail.com</a></li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Зачем?</h2>
+          <p class="fragment">Вижу много кода, который мог бы быть лучше</p>
+          <p class="fragment">Поделиться опытом</p>
+          <p class="fragment">Получить фидбек</p>
+          <p class="fragment">...</p>
+        </section>
+
+        <section>
+          <h2>Проблема</h2>
+          <p>Со временем изменения вносить все тяжелее и тяжелее</p>
+          <p>Любое изменение требует все больше и больше времени</p>
+        </section>
+
+        <section>
+          <h2>Причины</h2>
+          <ul>
+            <li>
+              Жесткость
+              <small>Необходимость изменений в одном месте тянет за собой изменения в других местах</small>
+            </li>
+            <li>
+              Хрупкость
+              <small>Изменения в одной части программы непонятно почему приводят к ошибкам в других частях системы</small>
+            </li>
+            <li>
+              Неразделяемость
+              <small>Невозможно использовать одну часть функционала без того, чтобы тебе навязали еще кучу всего</small>
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Управление зависимостями</h2>
+          <!-- <small>Отсутствие тестов, недостаточная проработка предметной области, неверно принятые ранее решения</small> -->
+        </section>
+
+        <section>
+          <pre><code class="ruby">class Nameserver < ActiveRecord::Base
+  def self.import
+    nameservers = fetch_nameservers
+
+    geoip = GeoIP.new(Rails.root.join('db', 'GeoLiteCity.dat'))
+    nameservers.each do |nameserver|
+      Rails.logger.info "Processing nameserver: #{nameserver[:ip]}"
+      nameserver = nameserver.slice(:country_id, :city, :state, :ip)
+      if valid_for_import?(nameserver)
+        fill_nameserver_with_additional_attributes(nameserver)
+        create!(nameserver)
+      end
+    end
+...</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">...
+    def self.fill_nameserver_with_additional_attributes(nameserver)
+      nameserver[:city] = nameserver[:city].presence
+
+      city = geoip.city(nameserver[:ip])
+      nameserver[:latitude] = city.latitude
+      nameserver[:longitude] = city.longitude
+    end
+
+    def self.fetch_nameservers
+      open('http://public-dns.tk/nameservers.json') { |f|
+        JSON.parse(f.read).map(&:symbolize_keys)
+      }
+    end
+...</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">...
+    def self.valid_for_import?(nameserver)
+      valid_country?(nameserver) &&
+        valid_state?(nameserver) &&
+        valid_ip_address?(nameserver) &&
+        exists?(:ip => nameserver[:ip]) &&
+        is_able_to_resolve?(nameserver)
+    end
+
+    private
+      # def self.valid_country?(nameserver)
+      # def self.valid_state?(nameserver)
+      # def self.valid_ip_address?(nameserver)
+      # def self.is_able_to_resolve?(nameserver)
+...</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">...
+    # Еще 10 страниц кода в том же классе
+    # И этот код уже не связан с импортом
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <h2><strike>Кто виноват и</strike> что делать?</h2>
+          <p>Литературы очень много</p>
+          <ul>
+            <li>Design Patters</li>
+            <li>GRASP</li>
+            <li>PoEAA</li>
+            <li>DDD</li>
+            <li>Hexagonal Architecture (aka "Ports and Adapters")</li>
+            <li>SOLID</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Принципы</h2>
+          <p>Low coupling</p>
+          <p>High cohesion</p>
+          <p>Small classes</p>
+          <p>Composition over inheritance</p>
+          <p>...</p>
+        </section>
+
+        <section>
+          <pre><code class="ruby">class Nameservers::Importer
+  def initialize(options)
+    @logger = options.fetch(:logger) {
+      Rails.logger
+    }
+    @repository = options.fetch(:repository) {
+      Nameservers::Nameserver
+    }
+    @validator = options.fetch(:validator) {
+      Nameservers::Validator.new(:repository => @repository)
+    }
+
+    @fetches_namespace_data = options.fetch(:fetches_namespace_data) {
+      Nameservers::DataLoader(:geoip =>
+        GeoIP.new(Rails.root.join('db', 'GeoLiteCity.dat')))
+    }
+  end</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">class Nameservers::Importer
+  def call(nameservers)
+    nameservers.each do |nameserver|
+      @logger.info "Processing nameserver: #{nameserver[:ip]}"
+
+      nameserver = nameserver.slice(:country_id, :city, :state, :ip)
+      if @validator.valid?(nameserver)
+        nameserver = @fetches_namespace_data.call(nameserver)
+        @repository.create!(nameserver)
+      end
+    end
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <ul>
+            <li><code>Single responsibility principle</code></li>
+            <li><code>Open closed principle</code></li>
+            <li><code>Liskov substitution principle</code></li>
+            <li><code>Interface segregation principle</code></li>
+            <li><code>Dependency inversion principle</code></li>
+          </ul>
+        </section>
+
+        <section>
+          <p>Создавайте больше классов.</p>
+          <p>При создании задумывайтесь, что может меняться.</p>
+          <p>Выделяйте зависимости (еще больше классов).</p>
+          <p>Изолируйте изменения.</p>
+        </section>
+
+        <section>
+          <h2>jsonrpc-client</h2>
+          <p><a href="https://github.com/fxposter/jsonrpc-client/pull/2">https://github.com/fxposter/jsonrpc-client/pull/2</a></p>
+        </section>
+
+        <section>
+          <h1>Практика!</h1>
+        </section>
+
+        <section>
+          <ul>
+            <li>Form object (ActiveModel::Model)</li>
+            <li>Decorators (draper, display-case)</li>
+            <li>Uploaders (carrierwave)</li>
+            <li>Inputs (simple_form)</li>
+            <li>Validators</li>
+          </ul>
+        </section>
+
+        <section>
+          <pre><code class="ruby" style="max-height: 600px">class Invoice < ActiveRecord::Base
+  attr_accessible :title
+
+  def as_json(options = {})
+    super(methods: [:user_name], only: [:id, :date_range, :price])
+  end
+
+  def report(filename)
+    CSV.generate(filename)
+    # ...
+  end
+
+  def background_color
+    settings.background_color || 'rgba(0, 0, 255, 0.5)'
+  end
+
+  def schedule_post_upload_processing
+    InvoiceProcessor.delay(priority: 15).after_create(id)
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby" style="max-height: 600px">class Invoice < ActiveRecord::Base # persistence
+  attr_accessible :title # fixed with strong params, do you agree?
+
+  def as_json(options = {}) # ActiveModel::Serializers, CustomSerializer
+    super(methods: [:user_name], only: [:id, :date_range, :price])
+  end
+
+  def report(filename) # InvoiceReportGenerator, ReportGenerator?
+    CSV.generate(filename)
+    # ...
+  end
+
+  def background_color # really? background color?
+    settings.background_color || 'rgba(0, 0, 255, 0.5)'
+  end
+
+  def schedule_post_upload_processing # definitely persistence
+    InvoiceProcessor.delay(priority: 15).after_create(id)
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <h2>Services</h2>
+          <p>Идея - по возможности stateless классы подобного вида:</p>
+          <pre><code class="ruby">class Service
+  def initialize(*dependencies)
+    # @dependencies = dependencies
+  end
+
+  # methods that use dependencies
+end</code></pre>
+          <p>Тем, кто писал на Angular.js будет знакома концепция</p>
+        </section>
+
+        <section>
+          <pre><code class="ruby">class Nameservers::Importer
+  def initialize(logger, repository, geoip, validator)
+  end
+end</code></pre>
+
+          <pre><code class="ruby">class Nameservers::Validator
+  def initialize(logger, repository)
+  end
+end</code></pre>
+
+          <pre><code class="ruby">class Nameservers::EventLogger
+  def initialize(logger_file_path)
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">module Nameservers::Registry
+  def self.repository
+    Nameservers::Nameserver # < ActiveRecord::Base
+  end
+
+  def self.importer
+    @importer ||= Nameservers::Importer.new(:validator => validator,
+                                            :repository => repository,
+                                            :geoip => Geoip.new(root + '/db/geoipcitylite.dat'))
+  end
+end</code></pre></section>
+
+        <section>
+          <pre><code class="ruby">module Nameservers::Registry
+  def self.validator
+    Nameservers::Validator.new(:repository => repository)
+  end
+
+  def self.serializer
+    Oj
+  end
+
+  private
+  def self.root
+    File.expand_path('../../', __FILE__)
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">container.register :root_path, '/tmp'
+container.register :repository, Nameserver
+
+container.register :validator do
+  NameserverValidator.new(:repository => repository)
+end
+
+container.register :importer do |validator, repository, root_path|
+  NameserverImporter.new(:validator => validator,
+                         :repository => repository,
+                         :geoip => Geoip.new(root_path + '/db/geoipcitylite.dat'))
+end</code></pre>
+        </section>
+
+        <section>
+          <p>Можно использовать вот такие "контейнеры" как для всего приложения, так и для конкретного запроса.</p>
+          <p>Их даже можно обьединить.</p>
+        </section>
+
+        <section>
+          <p>При использовании такой схемы, можно сделать обертку над ActionController, которая будет автоматически вставлять аргументы:</p>
+
+          <pre><code class="ruby">class ImportController
+  def import_nameservers(params, importer, nameserver_data_source)
+    importer.call(nameserver_data_source.all(params[:data_source_url]))
+  end
+end</code></pre>
+
+          <p>Hint: <a href="https://github.com/xaviershay/poniard">poniard</a></p>
+        </section>
+
+        <section>
+          <p>Можно сделать проще:</p>
+          <pre><code class="ruby">class ApplicationController
+  def container
+    # setup and cache container
+  end
+end
+
+class ImportController
+  def import_nameservers
+    nameservers = container[:nameserver_data_source].all(params[:data_source_url])
+    container[:importer].call(nameservers)
+  end
+end</code></pre>
+        </section>
+
+        <!-- <section>
+          <h2>Слой работы с данными</h2>
+          <pre><code class="ruby">class RelationalInvoiceRepository
+  def initialize(model)
+    @model = model
+  end
+
+  def save(invoice)
+    invoice.save
+  end
+
+  def find(id)
+    @model.find(id)
+  end
+
+  def find_where_a_equals_b_and_include_all_relationships
+    # LOTS OF AR STUFF
+  end
+end</code></pre>
+        </section> -->
+
+        <section>
+          <h2>События</h2>
+          <pre><code class="ruby">class Track < ActiveRecord::Base
+  def on(event, &callback)
+    (@events[event] ||= []) << callback
+  end
+
+  def trigger(event, *args)
+    @events[event].each do |callback|
+      callback.call(*args)
+    end
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">class Track < ActiveRecord::Base
+  around_save :notify_on_save
+  private
+  def notify_on_save
+    if new_record?
+      # ...
+    end
+
+    yield
+
+    if file_created_successfully?
+      trigger(:file_added, file)
+    end
+
+    # ...
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">class TracksController
+  def update
+    @track = Track.find(params[:ip])
+    @track.on :artist_changed do
+      schedule_artist_list_update
+    end
+
+    @track.on :file_added do |file|
+      notify_via_websockets(:added, file.url)
+    end
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <p>Вместо коллбеков можно использовать сам контроллер:</p>
+
+          <pre><code class="ruby">class Track < ActiveRecord::Base
+  def on(event, observer)
+    (@observers[event] ||= []) << observer
+  end
+
+  def trigger(event, *args)
+    @observers[event].each do |observer|
+      if observer.respond_to?(event)
+        observer.send(event, self, *args)
+      end
+    end
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">class TracksController
+  def update
+    @track = Track.find(params[:ip])
+    @track.add_listener self
+  end
+
+  def file_added(track, file)
+    notify_via_websockets(:added, file.url)
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <p>... или другие обьекты</p>
+          <pre><code class="ruby">class TracksController
+  def update
+    @track = Track.find(params[:ip])
+    @track.add_listener WebsocketNotifier.new(websocket_server_url)
+  end
+end
+
+class WebsocketNotifier
+  def initialize(websocket_server_url)
+    @websocket_server_url = websocket_server_url
+  end
+
+  def file_added(track, file)
+    # NOTIFY
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">class EventSet
+  def on(event, observer)
+    @observers ||= {}
+    @observers[event] ||= []
+    @observers[event] << observer
+  end
+
+  def off(event, observer)
+    return unless @observers
+    return unless @observers[event]
+    @observers[event].delete(observer)
+  end
+
+  def trigger(event, *args)
+    if @observers && @observers[event]
+      @observers[event].each do |observer|
+        if observer.respond_to?(event)
+          observer.send(event, *args)
+        end
+      end
+    end
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <h2>Use Cases</h2>
+          <p>Идея - отделить реакцию на запрос от фреймворка</p>
+          <pre><code class="ruby">class CreatesUserFile # or TrackCreator
+  def initialize(repository, uploader)
+    @repository = repository
+    @uploader = uploader
+  end
+
+  def call(params, request_body, listener)
+    attributes = extract_attributes(params)
+    attributes[:file_url] = @uploader.upload(request_body)
+    file = @repository.create(attributes)
+    listener.creation_succeeded(file)
+  rescue => e
+    listener.creation_failed(e)
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <h2>Чистые функции</h2>
+          <p>Приняли аргументы - возвратите значение</p>
+          <p>Не изменяйте переданные аргументы</p>
+
+          <pre><code class="ruby">def fill_nameserver_attributes(nameserver)
+  city = $geoip.city nameserver[:ip].to_s
+  nameserver[:latitude] = city.latitude
+  nameserver[:longitude] = city.longitude
+end
+
+nameserver = {:ip => IPAddr.new('8.8.8.8') }
+fill_nameserver_attributes(nameserver)
+nameserver[:latitude]
+=> 32.2</code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">def fill_nameserver_attributes(nameserver)
+  city = $geoip.city nameserver[:ip].to_s
+  nameserver.merge :latitude => city.latitude,
+                   :longitude => city.longitude
+end</code></pre>
+        </section>
+
+        <section>
+          <p>Если производительность вам в данном куске кода ОЧЕНЬ важна (что маловероятно):</p>
+          <pre><code class="ruby">def fill_nameserver_attributes(nameserver)
+  city = $geoip.city nameserver[:ip].to_s
+  nameserver[:latitude] = city.latitude
+  nameserver[:longitude] = city.longitude
+  nameserver
+end</code></pre>
+          <p>API должно показывать что клиент должен рассчитывать только на возвращаемое значение.</p>
+        </section>
+
+        <section>
+          <pre><code class="ruby">class JSONLoggerFormatter
+  def call(message)
+    message.to_json << "\n"
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <ul>
+            <li>Обьект сам знает как сделать из себя JSON</li>
+            <li class="fragment">Если нужна кастомизация - приходится переопределять <code class="ruby">#to_json</code></li>
+            <li class="fragment"><strong>Весь</strong> контроль по генерации json-а выносится на вызывающий уровень</li>
+            <li class="fragment">Если не хочется смешивать бизнес логику с кастомизацией json-представления - приходится на каждый вызов делать wrapper-ы</li>
+          </ul>
+        </section>
+
+        <section>
+          <pre><code class="ruby">class JSONLoggerFormatter
+  def call(message)
+    JSON.dump(message) << "\n"
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <ul>
+            <li>Явно видим кто будет сериализировать</li>
+            <li class="fragment">Можем использовать только те обьекты, которые известны в JSON: Hash, Array, String, etc</li>
+          </ul>
+        </section>
+
+        <section>
+          <pre><code class="ruby">class JSONLoggerFormatter
+  def initialize(json)
+    @json = json
+  end
+
+  def call(message)
+    @json.dump(message) << "\n"
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <ul>
+            <li>Явно видим кто будет сериализировать</li>
+            <li class="fragment">Можем локально подменять реализации JSON-а</li>
+            <li class="fragment">Можем обрабатывать как дампить кастомные обьекты</li>
+          </ul>
+        </section>
+
+        <section>
+          <pre><code class="ruby">class JSONLoggerFormatter
+  def initialize(json)
+    @json = json
+  end
+
+  def call(message)
+    @json.dump(message.to_value) << "\n"
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <ul>
+            <li>Явно видим кто будет сериализировать</li>
+            <li class="fragment">Можем локально подменять реализации JSON-а</li>
+            <li class="fragment">Можем обрабатывать как дампить кастомные обьекты на уровне самих обьектов</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Зачем ограничиваться JSON-ом?</h2>
+          <pre><code class="ruby">class SerializedLoggerFormatter
+  def initialize(serializer)
+    @serializer = serializer
+  end
+
+  def call(message)
+    @serializer.dump(message.to_value) << "\n"
+  end
+end</code></pre>
+        </section>
+
+        <section>
+          <h2>"Мы стремимся к hexagonal!"</h2>
+          <img src="../CleanArchitecture.jpg" alt="">
+        </section>
+
+        <section>
+          <h2>To be done</h2>
+          <ul>
+            <li>autoload vs require</li>
+            <li>Namespaced everything</li>
+            <li>Gemified everything</li>
+            <li>Enginied everything</li>
+            <li>Microservice everything?</li>
+          </ul>
+        </section>
+
+        <section>
+          <h1>Спасибо!</h1>
+        </section>
+
+      </div>
+
+    </div>
+
+    <script src="lib/js/head.min.js"></script>
+    <script src="js/reveal.min.js"></script>
+
+    <script>
+
+      // Full list of configuration options available here:
+      // https://github.com/hakimel/reveal.js#configuration
+      Reveal.initialize({
+        controls: true,
+        progress: true,
+        history: true,
+        center: true,
+
+        theme: Reveal.getQueryHash().theme, // available themes are in /css/theme
+        transition: Reveal.getQueryHash().transition || 'default', // default/cube/page/concave/zoom/linear/fade/none
+
+        // Parallax scrolling
+        // parallaxBackgroundImage: 'https://s3.amazonaws.com/hakim-static/reveal-js/reveal-parallax-1.jpg',
+        // parallaxBackgroundSize: '2100px 900px',
+
+        // Optional libraries used to extend on reveal.js
+        dependencies: [
+          { src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+          { src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+          { src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+          { src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+          { src: 'plugin/zoom-js/zoom.js', async: true, condition: function() { return !!document.body.classList; } },
+          { src: 'plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } }
+        ]
+      });
+
+    </script>
+
+  </body>
+</html>
