@@ -107,7 +107,7 @@
       Rails.logger.info "Processing nameserver: #{nameserver[:ip]}"
       nameserver = nameserver.slice(:country_id, :city, :state, :ip)
       if valid_for_import?(nameserver)
-        fill_nameserver_with_additional_attributes(nameserver)
+        fill_nameserver_with_additional_attributes(geoip, nameserver)
         create!(nameserver)
       end
     end
@@ -429,7 +429,7 @@ end</code></pre>
 
         <section>
           <h2>События</h2>
-          <pre><code class="ruby">class Track < ActiveRecord::Base
+          <pre><code class="ruby">class Nameserver < ActiveRecord::Base
   def on(event, &callback)
     (@events[event] ||= []) << callback
   end
@@ -443,7 +443,7 @@ end</code></pre>
         </section>
 
         <section>
-          <pre><code class="ruby">class Track < ActiveRecord::Base
+          <pre><code class="ruby">class Nameserver < ActiveRecord::Base
   around_save :notify_on_save
   private
   def notify_on_save
@@ -453,8 +453,8 @@ end</code></pre>
 
     yield
 
-    if file_created_successfully?
-      trigger(:file_added, file)
+    if connection_address_changed?
+      trigger(:connection_address_changed, new_connection_address, old_connection_address)
     end
 
     # ...
@@ -463,16 +463,19 @@ end</code></pre>
         </section>
 
         <section>
-          <pre><code class="ruby">class TracksController
+          <pre><code class="ruby">class NameserversController
   def update
-    @track = Track.find(params[:ip])
-    @track.on :artist_changed do
-      schedule_artist_list_update
+    @nameserver = Nameserver.find(params[:ip])
+    @nameserver.on :become_available do
+      schedule_background_job_for(@nameserver)
     end
 
-    @track.on :file_added do |file|
-      notify_via_websockets(:added, file.url)
+    @nameserver.on :connection_address_changed do |new_connection_address, old_connection_address|
+      notify_via_websockets(:create_connection, new_connection_address)
+      notify_via_websockets(:delete_connection, old_connection_address)
     end
+
+    @nameserver.save
   end
 end</code></pre>
         </section>
@@ -480,7 +483,7 @@ end</code></pre>
         <section>
           <p>Вместо коллбеков можно использовать сам контроллер:</p>
 
-          <pre><code class="ruby">class Track < ActiveRecord::Base
+          <pre><code class="ruby">class Nameserver < ActiveRecord::Base
   def on(event, observer)
     (@observers[event] ||= []) << observer
   end
@@ -496,24 +499,27 @@ end</code></pre>
         </section>
 
         <section>
-          <pre><code class="ruby">class TracksController
+          <pre><code class="ruby">class NameserversController
   def update
-    @track = Track.find(params[:ip])
-    @track.add_listener self
+    @nameserver = Nameserver.find(params[:ip])
+    @nameserver.add_listener self
+    @nameserver.save
   end
 
-  def file_added(track, file)
-    notify_via_websockets(:added, file.url)
+  def connection_address_changed(nameserver, new_connection_address, old_connection_address)
+    notify_via_websockets(:create_connection, new_connection_address)
+    notify_via_websockets(:delete_connection, old_connection_address)
   end
 end</code></pre>
         </section>
 
         <section>
           <p>... или другие обьекты</p>
-          <pre><code class="ruby">class TracksController
+          <pre><code class="ruby">class NameserversController
   def update
-    @track = Track.find(params[:ip])
-    @track.add_listener WebsocketNotifier.new(websocket_server_url)
+    @nameserver = Nameserver.find(params[:ip])
+    @nameserver.add_listener WebsocketNotifier.new(websocket_server_url)
+    @nameserver.save
   end
 end
 
@@ -522,7 +528,7 @@ class WebsocketNotifier
     @websocket_server_url = websocket_server_url
   end
 
-  def file_added(track, file)
+  def connection_address_changed(nameserver, new_connection_address, old_connection_address)
     # NOTIFY
   end
 end</code></pre>
@@ -557,7 +563,7 @@ end</code></pre>
         <section>
           <h2>Use Cases</h2>
           <p>Идея - отделить реакцию на запрос от фреймворка</p>
-          <pre><code class="ruby">class CreatesUserFile # or TrackCreator
+          <pre><code class="ruby">class CreatesUserFile # or UserFileCreator
   def initialize(repository, uploader)
     @repository = repository
     @uploader = uploader
